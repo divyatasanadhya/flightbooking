@@ -1,0 +1,196 @@
+&--------------------------------------------------------------------
+*& Module Pool      YT013_MP_BOOK
+&---------------------------------------------------------------------
+*&
+&---------------------------------------------------------------------
+
+INCLUDE YT013_MP_BOOK_TOP                       .    " Global Data
+ INCLUDE YT013_MP_BOOK_O01                       .   " PBO-Modules
+ INCLUDE YT013_MP_BOOK_I01                         .    " PAI-Modules
+ INCLUDE YT013_MP_BOOK_F01                        .    " FORM-Routines
+&---------------------------------------------------------------------
+*& Include YT013_MP_BOOK_TOP                        - Module Pool      YT013_MP_BOOK
+&---------------------------------------------------------------------
+PROGRAM YT013_MP_BOOK.
+
+TABLES : YT013_S_BOOK.
+
+DATA: gv_airline  TYPE s_carr_id,
+          gv_cdetails TYPE s_conn_id,
+          gv_flight_d TYPE s_date,
+          gv_custom TYPE S_CUSTOMER,
+          gv_class TYPE S_CLASS.
+DATA : WA_OUTPUT TYPE bapisbonew,
+            bookingid TYPE BAPISBOKEY-bookingid.
+
+DATA: itab_return TYPE TABLE OF bapiret2,
+           wa_return   TYPE bapiret2.
+
+DATA : wa_flight TYPE sflight,
+            flag type i VALUE IS INITIAL.
+&---------------------------------------------------------------------
+*& Include          YT013_MP_BOOK_O01
+&---------------------------------------------------------------------
+&---------------------------------------------------------------------
+*& Module STATUS_9001 OUTPUT
+&---------------------------------------------------------------------
+*&
+&---------------------------------------------------------------------
+MODULE status_9001 OUTPUT.
+ SET PF-STATUS 'STATUS'.
+ SET TITLEBAR 'TITLE'.
+if flag = 1.
+     loop at screen.
+       if screen-name = 'BOOKING'.
+         screen-input = 0.
+         MODIFY SCREEN.
+        endif.
+     endloop.
+ endif.
+ENDMODULE.
+&---------------------------------------------------------------------
+*& Include          YT013_MP_BOOK_I01
+&---------------------------------------------------------------------
+&---------------------------------------------------------------------
+*&      Module  USER_COMMAND_9001  INPUT
+&---------------------------------------------------------------------
+*       text
+----------------------------------------------------------------------
+MODULE user_command_9001 INPUT.
+  CASE sy-ucomm.
+    WHEN 'BACK'.
+      LEAVE TO SCREEN 0.
+  ENDCASE.
+  CASE sy-ucomm.
+    WHEN 'EXIT'.
+      LEAVE TO SCREEN 0.
+  ENDCASE.
+ENDMODULE.
+&---------------------------------------------------------------------
+*&      Module  VALIDATION  INPUT
+&---------------------------------------------------------------------
+*       text
+----------------------------------------------------------------------
+MODULE validation INPUT.
+  SELECT SINGLE carrid connid fldate FROM sflight INTO
+    (gv_airline , gv_cdetails , gv_flight_d) WHERE
+    carrid = yt013_s_book-carrid AND
+    connid = yt013_s_book-connid AND
+    fldate = yt013_s_book-fldate.
+ENDMODULE.
+&---------------------------------------------------------------------
+*&      Module  VALIDATION2  INPUT
+&---------------------------------------------------------------------
+*       text
+----------------------------------------------------------------------
+MODULE validation2 INPUT.
+  SELECT SINGLE customid FROM sbook INTO gv_custom WHERE
+    customid = yt013_s_book-customid.
+
+  SELECT SINGLE class FROM sbook INTO gv_class WHERE
+    class = yt013_s_book-class.
+ENDMODULE.
+&---------------------------------------------------------------------
+*&      Module  PROCESS  INPUT
+&---------------------------------------------------------------------
+*       text
+----------------------------------------------------------------------
+MODULE process INPUT.
+  CASE sy-ucomm.
+    WHEN 'ENTER'.
+      SELECT SINGLE name FROM scustom INTO yt013_s_book-passname
+        WHERE id = yt013_s_book-customid.
+  ENDCASE.
+
+  CASE sy-ucomm.
+    WHEN 'B1'.
+
+      wa_output-airlineid   = yt013_s_book-carrid.
+      wa_output-connectid  = yt013_s_book-connid.
+      wa_output-flightdate  = yt013_s_book-fldate.
+      wa_output-customerid  = yt013_s_book-customid.
+      wa_output-class       = yt013_s_book-class.
+      wa_output-counter     = yt013_s_book-counter.
+      wa_output-passname    = yt013_s_book-passname.
+
+
+
+      CALL FUNCTION 'BAPI_FLBOOKING_CREATEFROMDATA'
+        EXPORTING
+*         RESERVE_ONLY  =  '  '
+          booking_data  = wa_output
+*         TEST_RUN      =  '  '
+        IMPORTING
+*         AIRLINEID     =
+          bookingnumber = bookingid
+*         TICKET_PRICE  =
+        TABLES
+*         EXTENSION_IN  =
+          return        = itab_return.
+
+      IF itab_return IS NOT INITIAL.
+        LOOP AT itab_return INTO wa_return.
+          IF wa_return-type = 'E'.
+            MESSAGE 'Booking Cannot Be Created' TYPE 'E'.
+          ELSEIF wa_return-type = 'S'.
+            CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'
+              EXPORTING
+                wait = 'X'.
+            MESSAGE s000(yt013bookingid) WITH bookingid.
+          ENDIF.
+        ENDLOOP.
+      ENDIF.
+  ENDCASE.
+ENDMODULE.
+&---------------------------------------------------------------------
+*&      Module  CANCEL  INPUT
+&---------------------------------------------------------------------
+*       text
+----------------------------------------------------------------------
+MODULE cancel INPUT.
+  CASE sy-ucomm.
+    WHEN 'CANCEL'.
+      CLEAR : yt013_s_book-carrid,
+      yt013_s_book-class,
+      yt013_s_book-connid,
+      yt013_s_book-counter,
+      yt013_s_book-customid,
+      yt013_s_book-fldate,
+      yt013_s_book-passname.
+  ENDCASE.
+ENDMODULE.
+&---------------------------------------------------------------------
+*&      Module  CHECK  INPUT
+&---------------------------------------------------------------------
+*       text
+----------------------------------------------------------------------
+MODULE check INPUT.
+  CASE sy-ucomm.
+    WHEN 'CHECK'.
+      flag = 0.
+
+    select single *
+      from sflight
+      into wa_flight
+      where
+      carrid = yt013_s_book-carrid and
+      connid = yt013_s_book-connid and
+      fldate = yt013_s_book-fldate.
+
+ CASE yt013_s_book-class.
+        WHEN  'C'.
+          IF wa_flight-seatsocc = wa_flight-seatsmax.
+            flag = 1.
+          ENDIF.
+
+        WHEN  'Y'.
+          IF wa_flight-seatsocc_b = wa_flight-seatsmax_b.
+            flag = 1.
+          ENDIF.
+        WHEN  'F'.
+          IF wa_flight-seatsocc_f = wa_flight-seatsmax_f.
+            flag = 1.
+          ENDIF.   
+ENDCASE.
+  ENDCASE.
+ENDMODULE.
